@@ -3,13 +3,15 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: MediSimple - Prescription Decoder API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: prescriptions
+    description: Prescription analysis operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /prescriptions/analyze:
+    post:
+      operationId: analyzePrescription
+      tags: [prescriptions]
+      summary: Analyze a prescription image
+      description: Accepts a base64-encoded prescription image and language, returns structured medicine data with translations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrescriptionInput"
+      responses:
+        "200":
+          description: Prescription analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrescriptionAnalysis"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +66,141 @@ components:
           type: string
       required:
         - status
-
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+    PrescriptionInput:
+      type: object
+      required:
+        - imageBase64
+        - imageType
+        - language
+      properties:
+        imageBase64:
+          type: string
+          description: Base64-encoded image data (without data URI prefix)
+        imageType:
+          type: string
+          description: MIME type of the image (e.g. image/jpeg, image/png)
+        language:
+          type: string
+          description: Preferred language for translations (english, hindi, tamil, kannada, telugu)
+    MedicineInfo:
+      type: object
+      required:
+        - name
+        - cleanName
+        - purpose
+        - dosage
+        - timing
+        - duration
+        - sideEffects
+        - unclear
+      properties:
+        name:
+          type: string
+          description: Medicine name as written on prescription
+        cleanName:
+          type: string
+          description: Corrected/cleaned medicine name
+        purpose:
+          type: string
+          description: What this medicine treats in simple language
+        dosage:
+          type: string
+          description: Exact dosage e.g. 500mg
+        timing:
+          type: string
+          description: When to take e.g. 1 tablet after each meal, 3 times a day
+        duration:
+          type: string
+          description: For how many days
+        sideEffects:
+          type: string
+          description: Common side effects in simple words
+        unclear:
+          type: boolean
+          description: Whether the medicine name was unclear due to bad handwriting
+    GenericAlternative:
+      type: object
+      required:
+        - brandName
+        - genericName
+        - estimatedSavings
+      properties:
+        brandName:
+          type: string
+          description: Original brand name medicine
+        genericName:
+          type: string
+          description: Cheaper generic equivalent
+        estimatedSavings:
+          type: string
+          description: Approximate percentage or rupee savings
+    FdaInteraction:
+      type: object
+      required:
+        - medicineName
+        - warnings
+        - interactions
+      properties:
+        medicineName:
+          type: string
+        warnings:
+          type: array
+          items:
+            type: string
+        interactions:
+          type: array
+          items:
+            type: string
+    PrescriptionAnalysis:
+      type: object
+      required:
+        - medicines
+        - warnings
+        - genericAlternatives
+        - hindiSummary
+        - tamilSummary
+        - kannadaSummary
+        - teluguSummary
+        - doctorNotes
+        - fdaData
+      properties:
+        medicines:
+          type: array
+          items:
+            $ref: "#/components/schemas/MedicineInfo"
+        warnings:
+          type: array
+          items:
+            type: string
+          description: Drug interaction warnings
+        genericAlternatives:
+          type: array
+          items:
+            $ref: "#/components/schemas/GenericAlternative"
+        hindiSummary:
+          type: string
+          description: Full explanation in Hindi
+        tamilSummary:
+          type: string
+          description: Full explanation in Tamil
+        kannadaSummary:
+          type: string
+          description: Full explanation in Kannada
+        teluguSummary:
+          type: string
+          description: Full explanation in Telugu
+        doctorNotes:
+          type: string
+          description: Any other instructions visible on prescription
+        fdaData:
+          type: array
+          items:
+            $ref: "#/components/schemas/FdaInteraction"
+          description: FDA drug label data for each medicine

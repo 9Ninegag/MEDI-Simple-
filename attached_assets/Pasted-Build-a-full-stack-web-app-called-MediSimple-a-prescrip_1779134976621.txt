@@ -1,0 +1,118 @@
+Build a full-stack web app called MediSimple — a prescription decoder for rural India.
+
+WHAT IT DOES:
+User uploads or takes a photo of a doctor's handwritten prescription. The app uses Claude AI to analyze it and returns:
+- Each medicine name (cleaned up)
+- What each medicine does (in simple language, like explaining to a 10th grader)
+- Dosage and timing (e.g. "1 tablet after breakfast, lunch, dinner")
+- Side effects in plain words
+- Drug interaction warnings
+- Cheaper generic alternatives with estimated price difference
+- Full explanation translated in Hindi
+
+TECH STACK:
+- Frontend: React + Tailwind CSS
+- Backend: Python FastAPI
+- AI: Anthropic Claude API (claude-sonnet-4-20250514) with vision — send the image directly to Claude
+- Drug safety: OpenFDA API (free, no key needed) — https://api.fda.gov/drug/label.json
+- No database needed, stateless app
+
+FOLDER STRUCTURE:
+medisimple/
+├── frontend/ (React app, port 5173)
+│   ├── src/App.jsx
+│   ├── src/pages/ScanPage.jsx
+│   ├── src/pages/ResultPage.jsx
+│   └── src/components/MedicineCard.jsx
+├── backend/ (FastAPI, port 8000)
+│   ├── main.py
+│   ├── claude_service.py
+│   └── fda_service.py
+└── .env (ANTHROPIC_API_KEY)
+
+FRONTEND PAGES:
+1. ScanPage — clean upload UI with:
+   - A drag-and-drop zone OR camera capture button
+   - Language selector dropdown: English, Hindi, Tamil, Kannada, Telugu
+   - A big "Analyze Prescription" CTA button
+   - Loading state with a spinner and message "Reading your prescription..."
+
+2. ResultPage — shows results as cards:
+   - One card per medicine with: name, purpose, dosage timing, side effects
+   - A red warning banner if drug interactions are found
+   - A green "Cheaper Option Available" badge with generic name + savings
+   - A Hindi summary section at the bottom (collapsible)
+   - "Scan Another" button to go back
+
+DESIGN:
+- Clean medical aesthetic: white background, teal (#0D9488) as primary color, red for warnings
+- Use Google Fonts: "Plus Jakarta Sans" for headings, "Inter" for body
+- Mobile-first, fully responsive
+- Cards with soft shadows and rounded corners
+- No dark mode needed
+
+BACKEND — main.py:
+- POST /analyze endpoint that accepts multipart form: image file + language preference
+- Converts image to base64
+- Calls Claude API with vision
+- Also calls OpenFDA for each medicine found
+- Returns structured JSON
+
+CLAUDE PROMPT TO USE (in claude_service.py):
+"""
+You are MediSimple, a medical prescription assistant designed for patients in rural India who struggle to understand doctor's prescriptions.
+
+Analyze this prescription image carefully and return ONLY a valid JSON object (no markdown, no explanation outside JSON) with this exact structure:
+
+{
+  "medicines": [
+    {
+      "name": "medicine name as written",
+      "clean_name": "corrected medicine name",
+      "purpose": "what this medicine treats, in simple English",
+      "dosage": "exact dosage e.g. 500mg",
+      "timing": "when to take e.g. 1 tablet after each meal, 3 times a day",
+      "duration": "for how many days",
+      "side_effects": "2-3 common side effects in simple words",
+      "unclear": false
+    }
+  ],
+  "warnings": ["list any dangerous combinations between medicines found"],
+  "generic_alternatives": [
+    {
+      "brand_name": "original medicine",
+      "generic_name": "cheaper generic equivalent",
+      "estimated_savings": "approximate % or rupee savings"
+    }
+  ],
+  "hindi_summary": "full explanation of all medicines in Hindi in simple language",
+  "tamil_summary": "full explanation in Tamil",
+  "kannada_summary": "full explanation in Kannada",
+  "telugu_summary": "full explanation in Telugu",
+  "doctor_notes": "any other instructions visible on prescription"
+}
+
+Rules:
+- If a medicine name is unclear due to bad handwriting, set unclear: true and make your best guess for clean_name
+- Never invent medicine names — only extract what you can see
+- Keep all explanations at a 10th grade reading level
+- For timing, always convert medical shorthand: OD=once daily, BD=twice daily, TDS=three times daily, QID=four times daily, AC=before meals, PC=after meals
+- Return ONLY the JSON, nothing else
+"""
+
+FDA SERVICE (fda_service.py):
+- Takes a medicine name, calls https://api.fda.gov/drug/label.json?search=openfda.brand_name:{name}&limit=1
+- Returns warnings and interactions if found
+- Gracefully returns empty if medicine not found (many Indian brands won't be in FDA DB)
+
+ERROR HANDLING:
+- If image is not a prescription or unreadable, return {"error": "Could not read prescription. Please take a clearer photo in good lighting."}
+- If Claude API fails, show a friendly error message
+- Handle CORS properly between frontend (5173) and backend (8000)
+
+ENV VARIABLE:
+ANTHROPIC_API_KEY=your_key_here
+
+Make sure both frontend and backend start together with a single "Run" button in Replit using a Procfile or replit.nix / .replit config.
+
+Start by building the complete backend first, then the frontend. Make sure the /analyze endpoint works before building the UI.
