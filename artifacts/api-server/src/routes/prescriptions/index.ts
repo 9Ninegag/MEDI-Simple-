@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { analyzePrescriptionImage } from "../../lib/claude-prescription";
+import { analyzePrescriptionImage } from "../../lib/gemini-prescription";
 import { getFdaDataForMedicines } from "../../lib/fda-service";
 import { AnalyzePrescriptionBody } from "@workspace/api-zod";
 
