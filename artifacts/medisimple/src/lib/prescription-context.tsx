@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode } from "react";
-import type { PrescriptionAnalysis } from "@workspace/api-client-react/src/generated/api.schemas";
+import type { PrescriptionAnalysis } from "@workspace/api-client-react";
 
 interface PrescriptionContextType {
   analysisResult: PrescriptionAnalysis | null;

@@ -1,12 +1,13 @@
 import React, { useState, useRef } from "react";
 import { useLocation } from "wouter";
-import { Camera, Upload, Image as ImageIcon, X } from "lucide-react";
+import { Camera, Upload, X } from "lucide-react";
 import { useAnalyzePrescription } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { usePrescription } from "@/lib/prescription-context";
+import { compressImage } from "@/lib/compress-image";
 
 export default function ScanPage() {
   const [, setLocation] = useLocation();
@@ -19,32 +20,44 @@ export default function ScanPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [base64Data, setBase64Data] = useState<string | null>(null);
   const [mimeType, setMimeType] = useState<string | null>(null);
+  const [isCompressing, setIsCompressing] = useState(false);
 
   const analyzeMutation = useAnalyzePrescription();
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     if (!file.type.startsWith("image/")) {
       toast({
         title: "Invalid file",
-        description: "Please upload an image file (JPG, PNG).",
+        description: "Please upload an image file (JPG, PNG, HEIC).",
         variant: "destructive",
       });
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      setPreviewUrl(result);
-      // Strip data URI prefix
-      const base64 = result.split(",")[1];
+    setIsCompressing(true);
+    try {
+      const { base64, mimeType: compressedMime } = await compressImage(file);
+      // Show original image preview (nicer looking)
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setPreviewUrl(ev.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+
       setBase64Data(base64);
-      setMimeType(file.type);
-    };
-    reader.readAsDataURL(file);
+      setMimeType(compressedMime);
+    } catch {
+      toast({
+        title: "Could not load image",
+        description: "Please try a different photo.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCompressing(false);
+    }
   };
 
   const handleClearImage = () => {
@@ -59,7 +72,7 @@ export default function ScanPage() {
     if (!base64Data || !mimeType) return;
 
     setGlobalLang(language);
-    
+
     analyzeMutation.mutate(
       {
         data: {
@@ -73,10 +86,14 @@ export default function ScanPage() {
           setAnalysisResult(data);
           setLocation("/results");
         },
-        onError: () => {
+        onError: (err) => {
+          const message =
+            err?.data && typeof err.data === "object" && "error" in err.data
+              ? String((err.data as { error: string }).error)
+              : "We couldn't read this prescription. Please try a clearer photo in good lighting.";
           toast({
             title: "Analysis Failed",
-            description: "We couldn't read this prescription. Please try a clearer photo.",
+            description: message,
             variant: "destructive",
           });
         },
@@ -84,12 +101,17 @@ export default function ScanPage() {
     );
   };
 
+  const isLoading = isCompressing || analyzeMutation.isPending;
+  const loadingMessage = isCompressing
+    ? "Preparing image..."
+    : "Reading your prescription...";
+
   return (
     <div className="min-h-[100dvh] bg-background text-foreground flex flex-col items-center justify-center p-4">
-      {analyzeMutation.isPending && (
+      {isLoading && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-6 text-center">
           <div className="h-16 w-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-6" />
-          <h2 className="text-2xl font-semibold text-primary mb-2">Reading your prescription...</h2>
+          <h2 className="text-2xl font-semibold text-primary mb-2">{loadingMessage}</h2>
           <p className="text-muted-foreground">This will just take a moment.</p>
         </div>
       )}
@@ -112,6 +134,7 @@ export default function ScanPage() {
                   variant="outline"
                   className="h-32 flex flex-col items-center justify-center gap-3 border-dashed hover:border-primary hover:text-primary transition-colors"
                   onClick={() => cameraInputRef.current?.click()}
+                  disabled={isLoading}
                   data-testid="button-camera"
                 >
                   <Camera className="h-8 w-8" />
@@ -121,12 +144,13 @@ export default function ScanPage() {
                   variant="outline"
                   className="h-32 flex flex-col items-center justify-center gap-3 border-dashed hover:border-primary hover:text-primary transition-colors"
                   onClick={() => fileInputRef.current?.click()}
+                  disabled={isLoading}
                   data-testid="button-upload"
                 >
                   <Upload className="h-8 w-8" />
                   <span>Upload Image</span>
                 </Button>
-                
+
                 <input
                   type="file"
                   accept="image/*"
@@ -156,6 +180,7 @@ export default function ScanPage() {
                   size="icon"
                   className="absolute top-2 right-2 h-8 w-8 rounded-full shadow-md"
                   onClick={handleClearImage}
+                  disabled={isLoading}
                   data-testid="button-clear-image"
                 >
                   <X className="h-4 w-4" />
@@ -165,7 +190,7 @@ export default function ScanPage() {
 
             <div className="space-y-3">
               <label className="text-sm font-medium">Explain to me in:</label>
-              <Select value={language} onValueChange={setLanguage}>
+              <Select value={language} onValueChange={setLanguage} disabled={isLoading}>
                 <SelectTrigger data-testid="select-language">
                   <SelectValue placeholder="Select Language" />
                 </SelectTrigger>
@@ -181,15 +206,15 @@ export default function ScanPage() {
 
             <Button
               className="w-full text-lg h-12 rounded-xl font-medium"
-              disabled={!base64Data || analyzeMutation.isPending}
+              disabled={!base64Data || isLoading}
               onClick={handleAnalyze}
               data-testid="button-analyze"
             >
-              Analyze Prescription
+              {analyzeMutation.isPending ? "Analyzing..." : "Analyze Prescription"}
             </Button>
           </CardContent>
         </Card>
-        
+
         <div className="text-center text-xs text-muted-foreground px-4">
           By continuing, you agree to our terms. This is an AI tool and should not replace professional medical advice.
         </div>
